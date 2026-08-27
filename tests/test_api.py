@@ -2,6 +2,10 @@
 from datetime import datetime, timezone
 
 import pytest
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMockResponse,
+)
+from yarl import URL
 
 from custom_components.notione.api import (
     NotiOneApiError,
@@ -132,6 +136,48 @@ async def test_rejected_token_reauthenticates_exactly_once(hass, aioclient_mock)
     with pytest.raises(NotiOneAuthError):
         await client.async_get_devices()
 
+    token_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == TOKEN_URL]
+    list_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == LIST_URL]
+    assert len(token_calls) == 2
+    assert len(list_calls) == 2
+
+
+async def test_expired_token_403_reauthenticates_and_recovers(hass, aioclient_mock):
+    # The live API rejects an expired token on the device list with 403, not 401.
+    mock_auth_ok(aioclient_mock)
+    list_responses = [
+        AiohttpClientMockResponse("get", URL(LIST_URL), status=403),
+        AiohttpClientMockResponse(
+            "get", URL(LIST_URL), json={"deviceList": [BLE_DEVICE]}
+        ),
+    ]
+
+    async def next_list_response(method, url, data):
+        return list_responses.pop(0)
+
+    aioclient_mock.get(LIST_URL, side_effect=next_list_response)
+    client = NotiOneClient(async_get_clientsession(hass), "user@example.com", "pw")
+
+    devices = await client.async_get_devices()
+
+    assert [d.device_id for d in devices] == [111222]
+    token_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == TOKEN_URL]
+    list_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == LIST_URL]
+    assert len(token_calls) == 2
+    assert len(list_calls) == 2
+
+
+async def test_persistent_403_after_reauth_raises_api_error(hass, aioclient_mock):
+    # A 403 that survives a fresh login is a server-side policy problem, not bad
+    # credentials: raise the retryable API error, never the reauth-flow error.
+    mock_auth_ok(aioclient_mock)
+    aioclient_mock.get(LIST_URL, status=403)
+    client = NotiOneClient(async_get_clientsession(hass), "user@example.com", "pw")
+
+    with pytest.raises(NotiOneApiError) as err:
+        await client.async_get_devices()
+
+    assert not isinstance(err.value, NotiOneAuthError)
     token_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == TOKEN_URL]
     list_calls = [c for c in aioclient_mock.mock_calls if str(c[1]) == LIST_URL]
     assert len(token_calls) == 2

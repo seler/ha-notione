@@ -102,7 +102,8 @@ class NotiOneClient:
         if self._access_token is None:
             await self.async_authenticate()
         response = await self._request_device_list()
-        if response.status == 401:
+        if response.status in (401, 403):
+            # The live API rejects expired tokens with 403, not only 401.
             await self.async_authenticate()
             response = await self._request_device_list()
             if response.status == 401:
