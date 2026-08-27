@@ -2,7 +2,7 @@
 from homeassistant.components import system_health
 from homeassistant.core import HomeAssistant, callback
 
-API_ENDPOINT = "https://api.notinote.me/secured/internal/devicelist"
+from .const import LIST_URL
 
 
 @callback
@@ -13,9 +13,8 @@ def async_register(
     register.async_register_info(system_health_info)
 
 
-async def system_health_info(hass):
+async def system_health_info(hass: HomeAssistant) -> dict[str, object]:
     """Get info for the info page."""
     return {
-        "can_reach_server": system_health.async_check_can_reach_url(hass, API_ENDPOINT)
+        "can_reach_server": system_health.async_check_can_reach_url(hass, LIST_URL)
     }
-

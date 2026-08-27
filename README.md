@@ -1,46 +1,42 @@
-# notiOne Device Tracker
-[![GitHub Release][releases-shield]][releases]
-[![Hacs Badge][hacs-badge]][hacs-badge-url]
-[![PayPal_Me][paypal-me-shield]][paypal-me]
+# notiOne for Home Assistant
 
-This device tracker uses unofficial API to get data from https://panel.notione.com/
+Device trackers for [notiOne](https://notione.pl/) Bluetooth/GPS locators, using the same unofficial cloud API as the notiOne mobile app.
 
-## Configuration options
-| Key | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `username` | `string` | `True` | - | Username from notiOne |
-| `password` | `string` | `True` | - | Password from notiOne |
-| `scan_interval` | `int` | `False` | 300 | Scan interval |
+This is a fork of [n4ts/ha-notione](https://github.com/n4ts/ha-notione), rewritten as a modern config-entry integration:
 
-## View
-![Screenshot](https://github.com/n4ts/ha-notione/blob/master/images/notione.png?raw=true)
-
-## Usage:
-Add to configuration.yaml:
-
-```
-device_tracker:
-  - platform: notione
-    username: [USERNAME FROM NOTIONE]
-    password: [PASSWORD FROM NOTIONE]
-```
+- Asynchronous client on Home Assistant's shared HTTP session, with TLS certificate verification enabled and request timeouts (the original disabled certificate verification).
+- UI configuration (config flow) with credential validation, re-authentication on password change, and a picker for which trackers become entities.
+- Registry-based `device_tracker` entities with stable unique IDs (the notiOne device ID), GPS coordinates, accuracy, battery status, and position timestamp attributes.
+- No YAML configuration and no legacy `known_devices.yaml` involvement.
 
 ## Installation
 
-Download [*device_tracker.py*](https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/device_tracker.py), [*system_health.py*](https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/system_health.py), [\_\_init\_\_.py*](https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/__init__.py) and [*manifest.json*](https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/manifest.json) to `config/custom_components/notione` directory:
-```bash
-mkdir -p custom_components/notione
-cd custom_components/notione
-wget https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/device_tracker.py
-wget https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/system_health.py
-wget https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/manifest.json
-wget https://github.com/n4ts/ha-notione/raw/master/custom_components/notione/__init__.py
+### HACS (custom repository)
+
+1. HACS → Integrations → ⋮ → **Custom repositories**.
+2. Add `https://github.com/seler/ha-notione` with category **Integration**.
+3. Install **notiOne**, then restart Home Assistant.
+
+### Manual
+
+Copy `custom_components/notione/` into your config's `custom_components/` and restart.
+
+## Configuration
+
+Settings → Devices & services → **Add integration** → *notiOne*. Sign in with your notiOne account, then pick the trackers to follow. The tracked set can be changed later via the integration's **Configure** dialog.
+
+## Entity attributes
+
+Each tracker exposes `gpstime` (UTC position timestamp), `beaconid` (notiOne device ID), `location` (reverse-geocoded street and city as reported by the API), `battery_status` (`low`/`high`), and `deviceVersion`.
+
+## Development
+
+```sh
+docker run --rm -v "$PWD":/wt -w /wt --entrypoint bash \
+  ghcr.io/home-assistant/home-assistant:2026.8.3 \
+  -c "pip install -q pytest-homeassistant-custom-component trustme && python3 -m pytest tests -q"
 ```
 
-[releases]: https://github.com/n4ts/ha-notione/releases
-[releases-shield]: https://img.shields.io/github/release/n4ts/ha-notione.svg?style=for-the-badge
-[hacs-badge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
-[hacs-badge-url]: https://github.com/custom-components/hacs
-[paypal-me-shield]: https://img.shields.io/badge/PayPal.Me-stanpielak-blue?style=for-the-badge
-[paypal-me]: https://www.paypal.me/stanpielak
+## Credits and license
 
+Original integration by [@n4ts](https://github.com/n4ts). Apache License 2.0 (see `LICENSE`).

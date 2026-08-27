@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Sign in with your notiOne account.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "devices": {
+        "description": "Pick the trackers to follow as device tracker entities.",
+        "data": {
+          "tracked_devices": "Tracked devices"
+        }
+      },
+      "reauth_confirm": {
+        "description": "Enter the new password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect": "Cannot reach the notiOne API"
+    },
+    "abort": {
+      "already_configured": "This account is already configured",
+      "reauth_successful": "Re-authentication was successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "Pick the trackers to follow as device tracker entities.",
+        "data": {
+          "tracked_devices": "Tracked devices"
+        }
+      }
+    }
+  }
+}

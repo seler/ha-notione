@@ -1,154 +1,84 @@
-"""Support for notiOne® Bluetooth trackers."""
+"""Device tracker entities for notiOne trackers."""
+from __future__ import annotations
 
-from datetime import datetime,timedelta
-import logging
+from homeassistant.components.device_tracker import TrackerEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-import requests,json
-
-import voluptuous as vol
-
-from homeassistant.components.device_tracker import PLATFORM_SCHEMA
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_SCAN_INTERVAL
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.event import track_utc_time_change
-from homeassistant.helpers.event import track_point_in_utc_time
-from homeassistant.util import slugify
-from homeassistant.util import dt
-
-import urllib3
-urllib3.disable_warnings()
-
-_LOGGER = logging.getLogger(__name__)
-
-SCAN_INTERVAL = timedelta(seconds=300)
-MDI_ICON = 'mdi:bluetooth-connect'
-
-token_url = 'https://auth.notinote.me/oauth/token'
-list_url = 'https://api.notinote.me/secured/internal/devicelist'
-
-auth_login = 'test-oauth-client-id'
-auth_pass = '$2y$12$vXOUtEenVFCO1Zgy2YiePuF3WF/sDgNO3YnhRjl49NIDlEbGeSeOu'
-
-grant_type = 'password'
-scope = 'NOTI'
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_USERNAME): cv.string,
-    vol.Required(CONF_PASSWORD): cv.string,
-    vol.Optional(CONF_SCAN_INTERVAL):
-        vol.All(cv.time_period, cv.positive_timedelta)
-})
+from . import NotiOneConfigEntry, NotiOneCoordinator
+from .const import CONF_TRACKED_DEVICES, DOMAIN
 
 
-def setup_scanner(hass, config: dict, see, discovery_info=None):
-    NotiOneTracker(hass, config, see)
-    return True
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: NotiOneConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Create one tracker entity per tracked device."""
+    coordinator = entry.runtime_data
+    tracked = entry.options.get(CONF_TRACKED_DEVICES, [])
+    async_add_entities(
+        NotiOneTrackerEntity(coordinator, device_id) for device_id in tracked
+    )
 
 
-class NotiOneTracker:
+class NotiOneTrackerEntity(CoordinatorEntity[NotiOneCoordinator], TrackerEntity):
+    """Position of one notiOne tracker."""
 
-    def __init__(self, hass, config: dict, see) -> None:
+    _attr_icon = "mdi:bluetooth-connect"
 
-        self.hass = hass
-        self.username = config.get(CONF_USERNAME)
-        self.password = config.get(CONF_PASSWORD)
-        interval = config.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL)
+    def __init__(self, coordinator: NotiOneCoordinator, device_id: str) -> None:
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = device_id
+        device = coordinator.data.get(device_id)
+        self._attr_name = device.name if device else device_id
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            name=self._attr_name,
+            manufacturer="notiOne",
+            model=device.device_version if device else None,
+        )
 
-        _LOGGER.info('Scan interval: %s', interval)
+    @property
+    def _device(self):
+        return self.coordinator.data.get(self._device_id)
 
-        self.see = see
+    @property
+    def available(self) -> bool:
+        return super().available and self._device is not None
 
-        def update_interval(now):
+    @property
+    def latitude(self) -> float | None:
+        device = self._device
+        return device.latitude if device else None
 
-            try:
-                self._update_info()
-            finally:
-                track_point_in_utc_time(hass,
-                    update_interval, dt.utcnow() + interval)
+    @property
+    def longitude(self) -> float | None:
+        device = self._device
+        return device.longitude if device else None
 
-        update_interval(None)
+    @property
+    def location_accuracy(self) -> float:
+        device = self._device
+        return device.accuracy if device else 0
 
-    def _update_info(self, now=None) -> None:
-        """Update info from notiOne."""
+    @property
+    def entity_picture(self) -> str | None:
+        device = self._device
+        return device.avatar_url if device else None
 
-        _LOGGER.info("Updating device info")
-
-        data = {
-          'grant_type': grant_type,
-          'username': self.username,
-          'password': self.password,
-          'scope': scope
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        device = self._device
+        if device is None:
+            return {}
+        return {
+            "gpstime": device.gps_time,
+            "beaconid": device.device_id,
+            "location": ", ".join(part for part in (device.street, device.city) if part),
+            "battery_status": "low" if device.battery_low else "high",
+            "deviceVersion": device.device_version,
         }
-
-        access_token_response = requests.post(token_url, data=data, verify=False, allow_redirects=False, auth=(auth_login, auth_pass))
-
-        tokens = json.loads(access_token_response.text)
-        access_token = tokens['access_token']
-
-        api_call_headers = {
-            'Authorization': 'Bearer ' + access_token,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36 OPR/90.0.4480.54'
-        }
-        api_call_response = requests.get(list_url, headers=api_call_headers, verify=False)
-
-        json_object = json.loads(api_call_response.text)
-
-        for dev in json_object['deviceList']:
-
-            tracker_id = dev['deviceId']
-            dev_id = dev['name']
-
-            _LOGGER.info('New device: %s', dev_id)
-
-            if dev_id is None:
-                dev_id = tracker_id
-
-            lat = dev['lastPosition']['latitude']
-            lon = dev['lastPosition']['longitude']
-            beaconid = dev['deviceId']
-            deviceVersion = dev['deviceVersion']
-            gpstime = datetime.fromtimestamp(dev['lastPosition']['gpstime']/1000.0)
-            entity_picture = dev['avatar']
-            accuracy = dev['lastPosition']['accuracy']
-            city = dev['lastPosition']['geocodeCity']
-            street = dev['lastPosition']['geocodePlace']
-            
-            if dev['notiOneDetails'] is not None:
-                battery = dev['notiOneDetails']['battery']
-                mac = dev['notiOneDetails']['mac']
-            else:
-                battery = dev['gpsDetails']['battery']
-                mac = dev['gpsDetails']['imei']
-
-            if entity_picture is None:
-                entity_picture = ''
-
-            if city is None:
-                city = ''
-            if street is None:
-                street = ''
-
-            if battery:
-                battery_status = 'low'
-            else:
-                battery_status = 'high'
-
-            if entity_picture[0:4] != 'http':
-                entity_picture = ''
-
-            attrs = {
-                'unique_id': tracker_id,
-                'name': 'notiOne',
-                'friendly_name': dev_id ,
-                'gpstime': gpstime ,
-                'entity_picture': entity_picture ,
-                'beaconid': beaconid ,
-                'location': street + ', ' + city ,
-                'battery_status': battery_status ,
-                'deviceVersion': 'notiOne ' + deviceVersion, 
-                'icon': MDI_ICON
-            }
-
-            self.see(
-                dev_id=tracker_id, host_name=dev_id, mac=mac, gps=(lat, lon), gps_accuracy=accuracy, attributes=attrs
-            )

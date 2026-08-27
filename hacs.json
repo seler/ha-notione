@@ -1,7 +1,5 @@
 {
   "name": "notiOne",
-  "homeassistant": "0.104.0",
-  "render_readme": true,
-  "domains": ["device_tracker"],
-  "country": "PL"
+  "homeassistant": "2025.6.0",
+  "render_readme": true
 }
